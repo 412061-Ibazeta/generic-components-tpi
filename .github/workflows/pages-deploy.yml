@@ -10,7 +10,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages"
+  group: pages
   cancel-in-progress: true
 
 jobs:
@@ -20,27 +20,52 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Use Node
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
       - name: Install deps
-        run: npm ci
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm i
+          fi
 
-      - name: Read Angular default project
-        run: echo "NG_PROJECT=$(node -p "require('./angular.json').defaultProject")" >> $GITHUB_ENV
-
+      # Build sin pasar --base-href (algunas configs no lo aceptan)
       - name: Build Angular (prod)
         run: |
-          echo "Building project: $NG_PROJECT"
-          npx ng build $NG_PROJECT --configuration production --base-href "/generic-components-tpi/"
+          if npm run | grep -q " build"; then
+            npm run build -- --configuration production
+          else
+            npx ng build --configuration production
+          fi
 
-      - name: Detect output dir & add SPA fallback
+      # Detecta carpeta de salida y ajusta <base href> para /generic-components-tpi/
+      - name: Fix base href & add SPA fallback
         run: |
-          OUTDIR=$(ls -d dist/*/browser 2>/dev/null || true)
-          if [ -z "$OUTDIR" ]; then OUTDIR="dist"; fi
+          # Detect output dir (Angular 16+ suele ser dist/<proj>/browser)
+          OUTDIR=""
+          if ls -d dist/*/browser >/dev/null 2>&1; then
+            OUTDIR=$(ls -d dist/*/browser | head -n1)
+          elif [ -d dist ]; then
+            OUTDIR="dist"
+          else
+            echo "No se encontró carpeta dist" && exit 1
+          fi
           echo "OUTDIR=$OUTDIR" >> $GITHUB_ENV
+
+          INDEX="$OUTDIR/index.html"
+          # Reescribe <base href> a /generic-components-tpi/
+          if grep -q '<base href="' "$INDEX"; then
+            sed -i 's#<base href="[^"]*"#<base href="/generic-components-tpi/"#' "$INDEX"
+          else
+            # si no hay base, lo insertamos después de <head>
+            sed -i 's#<head>#<head><base href="/generic-components-tpi/">#' "$INDEX"
+          fi
+
+          # SPA fallback para rutas
           cp "$OUTDIR/index.html" "$OUTDIR/404.html"
 
       - name: Upload artifact
