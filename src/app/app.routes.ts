@@ -3,5 +3,5 @@ import {HomeBody} from './components/home-body/home-body';
 
 export const routes: Routes = [
   { path: '', component: HomeBody },
-  { path: 'home', component: HomeBody },
+  { path: 'home', component: HomeBody }
 ];
